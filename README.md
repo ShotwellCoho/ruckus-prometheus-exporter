@@ -94,6 +94,44 @@ System, interface & wireless data
 | `SNMP_PORT` | `161` | 🔌 SNMP port |
 | `METRICS_PORT` | `8000` | 📊 Prometheus metrics port |
 | `SCRAPE_INTERVAL` | `30` | ⏱️ Collection interval (seconds) |
+| `ENABLE_TRIANGULATION` | `true` | 🎯 **Client location tracking** |
+| `AP_COORDINATES` | - | 📍 **AP positions** (see guide below) |
+
+</details>
+
+### 🎯 New: Client Location Triangulation
+
+Track client devices across your wireless network using RSSI-based triangulation!
+
+<details>
+<summary>📍 <strong>Setup Location Tracking</strong></summary>
+
+**Configure AP Coordinates:**
+```bash
+# Format: "IP1:x,y,z;IP2:x,y,z" (coordinates in meters)
+AP_COORDINATES="192.168.1.100:0,0,2.5;192.168.1.101:30,0,2.5;192.168.1.102:15,20,2.5"
+```
+
+**Example Docker Compose with Triangulation:**
+```yaml
+services:
+  ruckus-exporter:
+    image: shotwellcoho/ruckus-ap-exporter:latest
+    environment:
+      RUCKUS_AP_HOSTS: "192.168.1.100,192.168.1.101,192.168.1.102"
+      ENABLE_TRIANGULATION: "true"
+      AP_COORDINATES: "192.168.1.100:0,0,3.0;192.168.1.101:30,0,3.0;192.168.1.102:15,20,3.0"
+      SCRAPE_INTERVAL: "15"  # More frequent for better tracking
+```
+
+**New Location Metrics:**
+- `ruckus_client_location_x_meters` - Client X coordinate  
+- `ruckus_client_location_y_meters` - Client Y coordinate
+- `ruckus_client_location_confidence` - Accuracy confidence (0-1)
+- `ruckus_client_rssi_dbm` - Client signal strength per AP
+- `ruckus_client_distance_meters` - Estimated distance from AP
+
+📖 **Full Guide:** See `CLIENT_LOCATION_GUIDE.md` for detailed setup instructions
 
 </details>
 
@@ -356,5 +394,6 @@ Non-root container • Secret management • Network isolation
 
 **[⬆ Back to Top](#-ruckus-ap-metrics-exporter)**
 
-</div>#   D o c k e r   b u i l d   t r i g g e r  
+</div>#   D o c k e r   b u i l d   t r i g g e r 
+ 
  
