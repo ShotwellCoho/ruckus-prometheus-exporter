@@ -6,36 +6,20 @@
 ██║  ██║╚██████╔╝╚██████╗██║  ██╗╚██████╔╝███████║    ███████╗██╔╝ ██╗██║     ╚██████╔╝██║  ██║   ██║   ███████╗██║  ██║
 ╚═╝  ╚═╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝    ╚══════╝╚═╝  ╚═╝╚═╝      ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═╝
 
-    ⚡ R A D I A T E D   N E T W O R K   M O N I T O R I N G ⚡           
-    
-                           ╭─────────────────╮
-                           │  📡 VAULT-TEC 📡│
-                           │   APPROVED™     │
-                           │                 │
-                           │    ◉     ◡     │ <- Pip-Boy wink!
-                           │     \___/       │
-                           │                 │
-                           │ ⚡ PROMETHEUS ⚡ │
-                           │   COMPATIBLE    │
-                           ╰─────────────────╯
-                           
-            💀 S.N.M.P = Super Nuclear Monitoring Protocol 💀
-```
-
 <div align="center">
 
 # 🚀 Ruckus AP Metrics Exporter
 
-[![Docker Pulls](https://img.shields.io/docker/pulls/yourusername/ruckus-ap-exporter?style=for-the-badge&logo=docker&color=2496ED)](https://hub.docker.com/r/yourusername/ruckus-ap-exporter)
-[![Docker Image Size](https://img.shields.io/docker/image-size/yourusername/ruckus-ap-exporter/latest?style=for-the-badge&logo=docker&color=2496ED)](https://hub.docker.com/r/yourusername/ruckus-ap-exporter)
-[![GitHub release](https://img.shields.io/github/v/release/yourusername/RuckusExporter?style=for-the-badge&logo=github&color=181717)](https://github.com/yourusername/RuckusExporter/releases)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/yourusername/RuckusExporter/docker-build.yml?branch=main&style=for-the-badge&logo=github-actions&color=2088FF)](https://github.com/yourusername/RuckusExporter/actions)
-[![License](https://img.shields.io/github/license/yourusername/RuckusExporter?style=for-the-badge&color=green)](LICENSE)
+[![Docker Pulls](https://img.shields.io/docker/pulls/shotwellcoho/ruckus-ap-exporter?style=for-the-badge&logo=docker&color=2496ED)](https://hub.docker.com/r/shotwellcoho/ruckus-ap-exporter)
+[![Docker Image Size](https://img.shields.io/docker/image-size/shotwellcoho/ruckus-ap-exporter/latest?style=for-the-badge&logo=docker&color=2496ED)](https://hub.docker.com/r/shotwellcoho/ruckus-ap-exporter)
+[![GitHub release](https://img.shields.io/github/v/release/ShotwellCoho/ruckus-prometheus-exporter?style=for-the-badge&logo=github&color=181717)](https://github.com/ShotwellCoho/ruckus-prometheus-exporter/releases)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/ShotwellCoho/ruckus-prometheus-exporter/docker-build.yml?branch=main&style=for-the-badge&logo=github-actions&color=2088FF)](https://github.com/ShotwellCoho/ruckus-prometheus-exporter/actions)
+[![License](https://img.shields.io/github/license/ShotwellCoho/ruckus-prometheus-exporter?style=for-the-badge&color=green)](LICENSE)
 
 **Professional Prometheus exporter for Ruckus Wireless Access Points**  
 *Multi-platform • Multi-AP • Production Ready*
 
-[🚀 Quick Start](#-quick-start) • [📊 Metrics](#-metrics) • [🐳 Docker Hub](https://hub.docker.com/r/yourusername/ruckus-ap-exporter) • [📖 Documentation](#-documentation)
+[🚀 Quick Start](#-quick-start) • [📊 Metrics](#-metrics) • [🐳 Docker Hub](https://hub.docker.com/r/shotwellcoho/ruckus-ap-exporter) • [📖 Documentation](#-documentation)
 
 </div>
 
@@ -123,7 +107,7 @@ System, interface & wireless data
 # 🚀 Single command deployment
 docker run -d --name ruckus-exporter -p 8000:8000 \
   -e RUCKUS_AP_HOSTS=192.168.1.100,192.168.1.101 \
-  yourusername/ruckus-ap-exporter:latest
+  shotwellcoho/ruckus-ap-exporter:latest
 
 # ✅ Verify it's working  
 curl http://localhost:8000/metrics | grep ruckus_ap_info
@@ -138,7 +122,7 @@ curl http://localhost:8000/metrics | grep ruckus_ap_info
 version: '3.8'
 services:
   ruckus-exporter:
-    image: yourusername/ruckus-ap-exporter:latest
+    image: shotwellcoho/ruckus-ap-exporter:latest
     restart: unless-stopped
     ports: ["8000:8000"]
     environment:
@@ -157,8 +141,8 @@ docker-compose up -d && docker-compose logs -f
 
 ```bash
 # Clone and deploy
-git clone https://github.com/yourusername/RuckusExporter.git
-cd RuckusExporter && docker-compose up -d
+git clone https://github.com/ShotwellCoho/ruckus-prometheus-exporter.git
+cd ruckus-prometheus-exporter && docker-compose up -d
 ```
 
 </details>
@@ -271,8 +255,8 @@ Get instant wireless network visibility with our **pre-built Grafana dashboard**
 
 ```bash
 # Clone & setup
-git clone https://github.com/yourusername/RuckusExporter.git
-cd RuckusExporter && python -m venv .venv && source .venv/bin/activate
+git clone https://github.com/ShotwellCoho/ruckus-prometheus-exporter.git
+cd ruckus-prometheus-exporter && python -m venv .venv && source .venv/bin/activate
 
 # Install dependencies  
 pip install -r requirements.txt
@@ -348,8 +332,8 @@ Non-root container • Secret management • Network isolation
 | 📊 [**Grafana Dashboard**](GRAFANA_SETUP.md) | Pre-built monitoring dashboard |
 | 📊 [**Multi-Platform Guide**](MULTI_PLATFORM_GUIDE.md) | Platform deployment details |
 | 🏗️ [**Multi-AP Setup**](MULTI_AP_SETUP.md) | Configuration examples |  
-| 🐳 [**Docker Hub**](https://hub.docker.com/r/yourusername/ruckus-ap-exporter) | Container repository |
-| 🚀 [**GitHub Actions**](https://github.com/yourusername/RuckusExporter/actions) | CI/CD pipeline |
+| 🐳 [**Docker Hub**](https://hub.docker.com/r/shotwellcoho/ruckus-ap-exporter) | Container repository |
+| 🚀 [**GitHub Actions**](https://github.com/ShotwellCoho/ruckus-prometheus-exporter/actions) | CI/CD pipeline |
 
 ---
 
@@ -358,10 +342,10 @@ Non-root container • Secret management • Network isolation
 <div align="center">
 
 ### 💬 **Get Help**
-[🐛 Issues](https://github.com/yourusername/RuckusExporter/issues) • [💡 Discussions](https://github.com/yourusername/RuckusExporter/discussions) • [📖 Wiki](https://github.com/yourusername/RuckusExporter/wiki)
+[🐛 Issues](https://github.com/ShotwellCoho/ruckus-prometheus-exporter/issues) • [💡 Discussions](https://github.com/ShotwellCoho/ruckus-prometheus-exporter/discussions) • [📖 Wiki](https://github.com/ShotwellCoho/ruckus-prometheus-exporter/wiki)
 
 ### 🤲 **Contribute**  
-[🔀 Fork](https://github.com/yourusername/RuckusExporter/fork) • [📋 Contributing Guide](CONTRIBUTING.md) • [🔒 Security Policy](SECURITY.md)
+[🔀 Fork](https://github.com/ShotwellCoho/ruckus-prometheus-exporter/fork) • [📋 Contributing Guide](CONTRIBUTING.md) • [🔒 Security Policy](SECURITY.md)
 
 ### ⭐ **Support This Project**
 **Star** ⭐ • **Share** 🔄 • **Contribute** 🛠️
