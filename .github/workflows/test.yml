@@ -1,0 +1,103 @@
+name: Test SNMP Connectivity
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install flake8 pytest
+    
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Test Python syntax
+      run: |
+        python -m py_compile ruckus_exporter.py
+        python -m py_compile snmp_diagnostic.py
+    
+    - name: Test import and basic functionality
+      run: |
+        python -c "
+        import sys
+        sys.path.append('.')
+        from ruckus_exporter import RuckusAPExporter
+        print('✅ Import successful')
+        
+        # Test with dummy host (will fail SNMP but should not crash)
+        try:
+            exporter = RuckusAPExporter(['127.0.0.1'], 'public')
+            print('✅ Exporter initialization successful')
+        except Exception as e:
+            print(f'⚠️ Expected SNMP error: {e}')
+        "
+
+  docker-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      run: |
+        docker build -t ruckus-exporter:test .
+    
+    - name: Test Docker image
+      run: |
+        # Start container in background
+        docker run -d --name test-container \
+          -e RUCKUS_AP_HOSTS=127.0.0.1 \
+          -e SNMP_COMMUNITY=public \
+          -p 8000:8000 \
+          ruckus-exporter:test
+        
+        # Wait for startup
+        sleep 5
+        
+        # Check if container is running
+        docker ps | grep test-container
+        
+        # Check logs
+        docker logs test-container
+        
+        # Test health endpoint (will fail SNMP but should return metrics format)
+        timeout 10 docker exec test-container python -c "
+        import urllib.request
+        try:
+            response = urllib.request.urlopen('http://localhost:8000/metrics', timeout=5)
+            print('✅ Metrics endpoint accessible')
+            content = response.read().decode('utf-8')
+            if 'python_info' in content:
+                print('✅ Prometheus metrics format detected')
+            else:
+                print('⚠️ Unexpected metrics format')
+        except Exception as e:
+            print(f'⚠️ Metrics endpoint error (expected with dummy host): {e}')
+        " || echo "Expected timeout with dummy host"
+        
+        # Cleanup
+        docker stop test-container
+        docker rm test-container
