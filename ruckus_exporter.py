@@ -48,6 +48,20 @@ class RuckusAPExporter:
         else:
             self.ap_hosts = ap_hosts
             
+        # 🎯 R700-specific: Support interface-to-SSID mapping for models that don't expose SSID names via SNMP
+        self.interface_ssid_map = {}
+        r700_interface_mapping = os.getenv('R700_INTERFACE_SSID_MAP', '')
+        if r700_interface_mapping:
+            # Format: "wlan0:MyNetwork,wlan1:Guest,wifi0:Corporate"
+            try:
+                for mapping in r700_interface_mapping.split(','):
+                    if ':' in mapping:
+                        interface, ssid = mapping.split(':', 1)
+                        self.interface_ssid_map[interface.strip()] = ssid.strip()
+                logger.info(f"🎯 R700 Interface mapping configured: {self.interface_ssid_map}")
+            except Exception as e:
+                logger.warning(f"⚠️  Invalid R700_INTERFACE_SSID_MAP format: {e}")
+            
         self.snmp_community = snmp_community
         self.port = port
         self.enable_triangulation = enable_triangulation
@@ -270,10 +284,18 @@ class RuckusAPExporter:
             logger.info(f"📊 Setting {ap_host} SSID '{ssid}' to {client_count} clients")
             self.wireless_clients.labels(ap_host=ap_host, ssid=ssid).set(client_count)
         
-        # If no SSIDs found, try fallback method
+        # If no SSIDs found, try R700-specific interface mapping, then fallback method
         if not ssid_client_map:
-            logger.warning(f"⚠️  No SSIDs discovered via SNMP tables for {ap_host}, trying fallback")
-            # Try to collect wireless client counts using standard MIBs
+            logger.warning(f"⚠️  No SSIDs discovered via SNMP tables for {ap_host}, trying R700 interface mapping")
+            
+            # 🎯 Try R700-specific interface-to-SSID mapping
+            if self.interface_ssid_map:
+                ssid_client_map = self.discover_r700_ssids_from_interfaces(ap_host)
+                if ssid_client_map:
+                    logger.info(f"🎯 R700: Successfully mapped interfaces to SSIDs: {ssid_client_map}")
+                    return ssid_client_map
+            
+            # Original fallback method
             try:
                 # This OID may not be available on all Ruckus models
                 client_count = self.snmp_get(ap_host, '1.3.6.1.4.1.14988.1.1.1.3.1.6.0')  # Example OID
@@ -302,76 +324,99 @@ class RuckusAPExporter:
     def discover_ssids_and_clients(self, ap_host: str):
         """
         🎯 Discover active SSIDs and connected clients on this AP
+        Uses the discovered Ruckus SSID table: 1.3.6.1.4.1.25053.1.1.6.1.1.1.1.1.1
         Returns: dict mapping SSID -> client_count
         """
         ssid_client_map = {}
         
         logger.info(f"🔍 Starting SSID discovery for {ap_host}")
         
-        # 🎯 Try dynamic SSID discovery through client association tables
-        
-        # 🎯 NEW APPROACH: Try to directly query client association tables first
-        ssid_client_map = self.discover_clients_and_derive_ssids(ap_host)
-        if ssid_client_map:
-            logger.info(f"🎯 Found SSIDs via client association tables: {ssid_client_map}")
-            return ssid_client_map
-        
+        # 🎯 NEW DYNAMIC DISCOVERY: Use the discovered Ruckus SSID table
         try:
-            # Extended SNMP OIDs for wireless networks (Ruckus-specific)
-            ssid_oids = [
-                # Standard Ruckus OIDs
-                '1.3.6.1.4.1.25053.1.2.1.4.1.1.3',        # Ruckus SSID name table
-                '1.3.6.1.4.1.25053.1.2.2.1.1.2.1.1.2',    # Ruckus VAP SSID table  
-                
-                # Additional Ruckus Enterprise OIDs to try
-                '1.3.6.1.4.1.25053.1.1.1.1.1.1.2',        # Ruckus wireless SSID table
-                '1.3.6.1.4.1.25053.1.4.1.1.1.2',          # Ruckus WLAN SSID table
-                '1.3.6.1.4.1.25053.1.15.1.1.1.1.9',       # Ruckus service SSID
-                '1.3.6.1.4.1.25053.1.2.1.1.1.1.3',        # Another Ruckus SSID table
-                
-                # IEEE 802.11 standard OIDs
-                '1.2.840.10036.1.1.1.9',                   # IEEE 802.11 SSID
-                '1.2.840.10036.2.1.1.5',                   # IEEE 802.11 network name
-                
-                # Try some common wireless OIDs
-                '1.3.6.1.4.1.14179.2.1.1.1.3',           # Cisco SSID table
-                '1.3.6.1.4.1.14988.1.1.1.3.1.1.0',        # RouterOS SSID table
-                
-                # Standard interface description table (fallback)
-                '1.3.6.1.2.1.2.2.1.2',                     # Standard interface description table
-            ]
+            # Base OID for SSID names (discovered via systematic search)
+            ssid_name_base = "1.3.6.1.4.1.25053.1.1.6.1.1.1.1.1.1"
             
-            # Try to walk SSID tables
-            for oid in ssid_oids:
-                logger.info(f"🔍 Trying SSID OID: {oid}")
-                ssid_data = self.snmp_walk(ap_host, oid)
-                logger.info(f"🔍 SNMP walk result: {ssid_data}")
-                
-                for suffix, ssid_name in ssid_data.items():
-                    logger.info(f"🔍 Processing: suffix={suffix}, ssid_name='{ssid_name}' (type: {type(ssid_name)})")
-                    if ssid_name and isinstance(ssid_name, str) and len(ssid_name) > 0:
-                        # Clean up SSID name
-                        ssid_clean = str(ssid_name).strip()
-                        logger.info(f"🔍 Cleaned SSID: '{ssid_clean}'")
-                        if ssid_clean and not ssid_clean.startswith('br') and not ssid_clean.startswith('eth'):
-                            # Try to get client count for this SSID
-                            client_count = self.get_clients_for_ssid(ap_host, ssid_clean, suffix)
-                            logger.info(f"🔍 Client count for SSID '{ssid_clean}': {client_count}")
-                            if client_count >= 0:
-                                ssid_client_map[ssid_clean] = client_count
-                                logger.info(f"📡 Found SSID '{ssid_clean}' with {client_count} clients on {ap_host}")
-                
-                if ssid_client_map:
-                    logger.info(f"🎯 SSIDs found with OID {oid}, stopping search")
-                    break  # Found SSIDs, no need to try other OIDs
+            # Walk the SSID table to get all configured SSIDs
+            logger.info(f"🔍 Attempting SNMP walk of SSID table: {ssid_name_base}")
+            ssid_data = self.snmp_walk(ap_host, ssid_name_base)
+            logger.info(f"🔍 SNMP walk completed. Found {len(ssid_data) if ssid_data else 0} entries")
             
-            # If no SSIDs found via SNMP tables, check interface descriptions
-            if not ssid_client_map:
-                logger.info(f"🔍 No SSIDs found via SNMP tables, trying interface descriptions")
-                ssid_client_map = self.discover_ssids_from_interfaces(ap_host)
+            if ssid_data:
+                logger.info(f"🔍 Found SSID table data for {ap_host}: {len(ssid_data)} entries")
+                
+                for oid, ssid_name in ssid_data.items():
+                    if ssid_name and str(ssid_name).strip():
+                        # Extract the index from the OID
+                        index = oid.split('.')[-1]
+                        ssid_str = str(ssid_name).strip()
+                        
+                        # Filter out non-SSID entries (binary data, etc.)
+                        if (len(ssid_str) <= 32 and  # SSIDs are max 32 chars
+                            any(char.isalpha() for char in ssid_str) and  # Contains letters
+                            not any(bad in ssid_str.lower() for bad in [':', '»', '·', '÷'])):  # Not binary junk
+                            
+                            logger.info(f"📡 Found SSID: {ssid_str} (index: {index})")
+                            
+                            # Try to get client count from related OIDs
+                            client_count = 0
+                            
+                            # Try different potential client count OIDs (discovered from testing)
+                            client_oid_patterns = [
+                                f"1.3.6.1.4.1.25053.1.1.6.1.1.1.2.1.1.{index}",  # Main client count table
+                                f"1.3.6.1.4.1.25053.1.1.6.1.1.1.1.1.3.{index}",  # Secondary table (seems to always be 2)
+                                f"1.3.6.1.4.1.25053.1.1.6.1.1.1.1.2.1.{index}",  # Alternative pattern
+                            ]
+                            
+                            for client_oid in client_oid_patterns:
+                                try:
+                                    count = self.snmp_get(ap_host, client_oid)
+                                    if count is not None and str(count).isdigit():
+                                        client_count = int(count)
+                                        logger.info(f"� Found client count for {ssid_str}: {client_count} (from {client_oid})")
+                                        break
+                                except Exception as e:
+                                    continue
+                            
+                            # If no direct client count found, try to estimate from interface traffic
+                            if client_count == 0:
+                                # Based on interface discovery, try to map SSID index to interface
+                                # This mapping varies by AP model and configuration
+                                interface_mapping = {
+                                    '0': 'wlan1',   # Wireless 1 
+                                    '1': 'wifi0',   # wifi interface  
+                                    '8': 'wlan8',   # Wireless 8
+                                    '9': 'wifi1',   # wifi interface
+                                    '10': 'wlan10', # Wireless 10
+                                }
+                                
+                                if index in interface_mapping:
+                                    interface_name = interface_mapping[index]
+                                    client_count = self.estimate_clients_from_interface_traffic(ap_host, interface_name)
+                                    if client_count > 0:
+                                        logger.info(f"� Estimated {client_count} clients for {ssid_str} via interface {interface_name}")
+                            
+                            ssid_client_map[ssid_str] = client_count
+                            
+                return ssid_client_map
                 
         except Exception as e:
-            logger.error(f"❌ Error discovering SSIDs on {ap_host}: {e}")
+            logger.error(f"❌ Error in dynamic SSID discovery for {ap_host}: {e}")
+        
+        # 🎯 FALLBACK: Only try client association discovery if explicitly enabled
+        if not ssid_client_map and os.getenv('ENABLE_SLOW_DISCOVERY', 'false').lower() == 'true':
+            logger.info(f"🔍 Fallback: Trying client association tables (slow)")
+            try:
+                ssid_client_map = self.discover_clients_and_derive_ssids(ap_host)
+                if ssid_client_map:
+                    logger.info(f"🎯 Found SSIDs via client association tables: {ssid_client_map}")
+                    return ssid_client_map
+            except Exception as e:
+                logger.warning(f"⚠️  Client association discovery failed: {e}")
+        
+        # 🎯 FINAL FALLBACK: Original interface-based discovery
+        if not ssid_client_map:
+            logger.info(f"🔍 Final fallback: Trying interface descriptions")
+            ssid_client_map = self.discover_ssids_from_interfaces(ap_host)
             
         logger.info(f"🎯 Final SSID discovery result for {ap_host}: {ssid_client_map}")
         return ssid_client_map
@@ -571,6 +616,130 @@ class RuckusAPExporter:
                         
         except Exception as e:
             logger.debug(f"Error discovering SSIDs from interfaces on {ap_host}: {e}")
+            
+        return ssid_client_map
+    
+    def estimate_clients_from_interface_traffic(self, ap_host: str, interface_name: str):
+        """
+        🎯 Estimate number of clients based on interface traffic patterns
+        This is a heuristic approach when direct client counts aren't available
+        """
+        try:
+            # Get interface index for the target interface
+            if_names = self.snmp_walk(ap_host, '1.3.6.1.2.1.2.2.1.2')  # Interface names
+            
+            target_index = None
+            for oid, name in if_names.items():
+                if str(name).strip() == interface_name:
+                    target_index = oid.split('.')[-1]
+                    break
+            
+            if not target_index:
+                logger.debug(f"📊 Interface {interface_name} not found on {ap_host}")
+                return 0
+            
+            # Get traffic statistics for this interface
+            rx_packets_oid = f"1.3.6.1.2.1.2.2.1.11.{target_index}"  # ifInUcastPkts
+            tx_packets_oid = f"1.3.6.1.2.1.2.2.1.17.{target_index}"  # ifOutUcastPkts
+            rx_bytes_oid = f"1.3.6.1.2.1.2.2.1.10.{target_index}"    # ifInOctets
+            tx_bytes_oid = f"1.3.6.1.2.1.2.2.1.16.{target_index}"    # ifOutOctets
+            
+            rx_packets = self.snmp_get(ap_host, rx_packets_oid)
+            tx_packets = self.snmp_get(ap_host, tx_packets_oid)
+            rx_bytes = self.snmp_get(ap_host, rx_bytes_oid)
+            tx_bytes = self.snmp_get(ap_host, tx_bytes_oid)
+            
+            if all(v is not None for v in [rx_packets, tx_packets, rx_bytes, tx_bytes]):
+                total_packets = int(rx_packets) + int(tx_packets)
+                total_bytes = int(rx_bytes) + int(tx_bytes)
+                
+                # Heuristic estimation based on traffic patterns
+                if total_packets > 100000:  # High traffic
+                    # Estimate based on packet count (rough: 1 client per 50k packets)
+                    estimated = max(1, min(50, total_packets // 50000))
+                elif total_bytes > 10000000:  # 10MB+ traffic
+                    # Estimate based on bytes (rough: 1 client per 10MB)  
+                    estimated = max(1, min(20, total_bytes // 10000000))
+                elif total_packets > 1000:  # Some activity
+                    estimated = 1
+                else:
+                    estimated = 0
+                
+                logger.debug(f"📊 Estimated {estimated} clients for {interface_name} based on traffic: {total_packets} packets, {total_bytes} bytes")
+                return estimated
+            else:
+                logger.debug(f"📊 Could not get traffic stats for {interface_name}")
+                return 0
+                
+        except Exception as e:
+            logger.debug(f"📊 Error estimating clients for {interface_name}: {e}")
+            return 0
+    
+    def discover_r700_ssids_from_interfaces(self, ap_host: str):
+        """
+        🎯 R700-specific: Map discovered interface names to actual SSIDs using configuration
+        
+        Since R700s expose interface names (wifi0, wlan0, etc.) instead of SSID names via SNMP,
+        we use the configured interface_ssid_map to translate them.
+        """
+        ssid_client_map = {}
+        
+        try:
+            logger.info(f"🎯 R700: Attempting interface-to-SSID mapping for {ap_host}")
+            
+            # Get the interface data we know works (from the logs, we see wifi0, wlan0, etc.)
+            interface_data = self.snmp_walk(ap_host, '1.3.6.1.2.1.2.2.1.2')  # Interface names
+            
+            if interface_data:
+                logger.info(f"🎯 R700: Found interfaces: {list(interface_data.values())}")
+                
+                for oid, interface_name in interface_data.items():
+                    interface_str = str(interface_name).strip()
+                    
+                    # Check if this interface is mapped to an SSID
+                    if interface_str in self.interface_ssid_map:
+                        ssid_name = self.interface_ssid_map[interface_str]
+                        
+                        # Try to get client count for this interface
+                        # Use interface statistics as a proxy for activity
+                        try:
+                            # Extract interface index from OID
+                            if_index = oid.split('.')[-1]
+                            
+                            # Try to get interface packet counts or other activity indicators
+                            rx_packets_oid = f"1.3.6.1.2.1.2.2.1.11.{if_index}"  # ifInUcastPkts
+                            tx_packets_oid = f"1.3.6.1.2.1.2.2.1.17.{if_index}"  # ifOutUcastPkts
+                            
+                            rx_packets = self.snmp_get(ap_host, rx_packets_oid)
+                            tx_packets = self.snmp_get(ap_host, tx_packets_oid)
+                            
+                            # Estimate client activity (this is a rough approximation)
+                            if rx_packets is not None and tx_packets is not None:
+                                # Simple heuristic: if there's significant traffic, assume clients are connected
+                                total_packets = int(rx_packets) + int(tx_packets)
+                                if total_packets > 1000:  # Arbitrary threshold for "active"
+                                    # Rough estimate: assume 1 client per 10k packets (very rough)
+                                    estimated_clients = max(1, min(20, total_packets // 10000))
+                                    ssid_client_map[ssid_name] = estimated_clients
+                                    logger.info(f"🎯 R700: Mapped {interface_str} -> {ssid_name} with {estimated_clients} estimated clients (traffic: {total_packets} packets)")
+                                else:
+                                    ssid_client_map[ssid_name] = 0
+                                    logger.info(f"🎯 R700: Mapped {interface_str} -> {ssid_name} with 0 clients (low traffic)")
+                            else:
+                                # Default to 1 client if we can't get traffic stats but interface is mapped
+                                ssid_client_map[ssid_name] = 1
+                                logger.info(f"🎯 R700: Mapped {interface_str} -> {ssid_name} with 1 default client (no traffic stats)")
+                                
+                        except Exception as e:
+                            # Still map the SSID even if we can't get client count
+                            ssid_client_map[ssid_name] = 0
+                            logger.warning(f"🎯 R700: Mapped {interface_str} -> {ssid_name} but couldn't estimate clients: {e}")
+                    
+                    elif any(wireless in interface_str.lower() for wireless in ['wlan', 'wifi', 'ath']):
+                        logger.debug(f"🎯 R700: Found wireless interface {interface_str} but no SSID mapping configured")
+                        
+        except Exception as e:
+            logger.error(f"🎯 R700: Error mapping interfaces to SSIDs: {e}")
             
         return ssid_client_map
     

@@ -10,10 +10,10 @@ from ruckus_exporter import RuckusAPExporter
 
 def main():
     # Set up environment for testing with real APs
-    os.environ['RUCKUS_AP_HOSTS'] = '192.168.1.58,192.168.1.29'
+    os.environ['RUCKUS_AP_HOSTS'] = '192.168.1.100,192.168.1.101'
     os.environ['SNMP_COMMUNITY'] = 'public'  # Change if needed
     os.environ['ENABLE_TRIANGULATION'] = 'true'
-    os.environ['AP_COORDINATES'] = '192.168.1.58:0,0,2.5;192.168.1.29:20,0,2.5'
+    os.environ['AP_COORDINATES'] = '192.168.1.100:0,0,2.5;192.168.1.101:20,0,2.5'
     os.environ['DEMO_MODE'] = 'false'  # Use real data
     
     print("🎯 Starting Ruckus AP Exporter with Triangulation")
